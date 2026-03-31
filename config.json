@@ -10,7 +10,9 @@
       "color": "#4CAF50",
       "pinnedSessions": [
         "agent:main:main",
-        "agent:dev:dashboard:caf88728-32f0-45a9-b61a-c93342fcf400"
+        "agent:dev:dashboard:caf88728-32f0-45a9-b61a-c93342fcf400",
+        "agent:search:dashboard:2bf438f2-5717-407c-9988-a8ff7995bbf6",
+        "agent:quant:dashboard:6e190bf6-d892-4b47-b3dd-5a7564105f77"
       ]
     },
     {

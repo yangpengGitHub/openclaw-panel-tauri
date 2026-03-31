@@ -1,16 +1,17 @@
 {
   "name": "openclaw-panel",
-  "version": "1.1.0",
+  "version": "2.0.0",
   "description": "Multi-instance OpenClaw Gateway management panel",
-  "main": "electron-main.js",
+  "main": "server.js",
   "scripts": {
     "start": "node server.js",
-    "start:electron": "electron .",
-    "build": "node build.js",
-    "build:win": "electron-builder --win",
-    "build:win:dir": "electron-builder --win --dir",
-    "build:linux": "electron-builder --linux",
-    "dev": "node server.js"
+    "dev": "node server.js",
+    "tauri": "tauri",
+    "tauri:dev": "tauri dev",
+    "tauri:build": "tauri build",
+    "tauri:build:win": "tauri build --target x86_64-pc-windows-msvc",
+    "tauri:build:linux": "tauri build --target x86_64-unknown-linux-gnu",
+    "tauri:build:android": "tauri android build"
   },
   "keywords": [
     "openclaw",
@@ -27,56 +28,10 @@
     "http-proxy-middleware": "^3.0.5",
     "lucide": "^1.7.0",
     "multer": "^1.4.5-lts.1",
-    "ws": "^8.20.0"
+    "ws": "^8.20.0",
+    "@tauri-apps/api": "^2.0.0"
   },
   "devDependencies": {
-    "electron": "^41.1.0",
-    "electron-builder": "^26.8.1"
-  },
-  "build": {
-    "appId": "com.openclaw.panel",
-    "productName": "OpenClaw Panel",
-    "directories": {
-      "output": "dist"
-    },
-    "files": [
-      "electron-main.js",
-      "server.js",
-      "lib/**/*",
-      "public/**/*",
-      "config.json",
-      "!node_modules/.cache",
-      "!uploads/**",
-      "!dist/**",
-      "!build.js",
-      "!test-panel.js",
-      "!docker-compose.yml",
-      "!Dockerfile",
-      "!README.md"
-    ],
-    "win": {
-      "target": [
-        {
-          "target": "nsis",
-          "arch": ["x64"]
-        },
-        {
-          "target": "portable",
-          "arch": ["x64"]
-        }
-      ],
-      "icon": "public/icon.png"
-    },
-    "nsis": {
-      "oneClick": false,
-      "allowToChangeInstallationDirectory": true,
-      "createDesktopShortcut": true,
-      "createStartMenuShortcut": true,
-      "shortcutName": "OpenClaw Panel",
-      "uninstallDisplayName": "OpenClaw Panel"
-    },
-    "portable": {
-      "artifactName": "OpenClaw-Panel-portable.exe"
-    }
+    "@tauri-apps/cli": "^2.0.0"
   }
 }
