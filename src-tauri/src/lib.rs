@@ -1,4 +1,5 @@
 use tauri::Manager;
+use tauri::WebviewUrl;
 
 #[cfg(not(target_os = "android"))]
 use tauri::{
@@ -14,6 +15,20 @@ pub fn run() {
     #[cfg(not(target_os = "android"))]
     let builder = builder.setup(|app| {
         let handle = app.handle();
+
+        // --- Main window: load from remote server for live updates ---
+        let _window = tauri::WebviewWindowBuilder::new(
+            handle,
+            "main",
+            WebviewUrl::External("http://192.168.1.48:19800".parse().unwrap()),
+        )
+        .title("OpenClaw Panel")
+        .inner_size(1200.0, 800.0)
+        .min_inner_size(400.0, 300.0)
+        .resizable(true)
+        .fullscreen(false)
+        .center()
+        .build()?;
 
         // --- System Tray (Desktop only) ---
         let show = MenuItemBuilder::with_id("show", "Show Panel").build(handle)?;
