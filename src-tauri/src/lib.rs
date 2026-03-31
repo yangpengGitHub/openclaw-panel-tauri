@@ -1,7 +1,5 @@
 use tauri::Manager;
 use tauri::WebviewUrl;
-use std::net::TcpStream;
-use std::time::Duration;
 
 #[cfg(not(target_os = "android"))]
 use tauri::{
@@ -10,17 +8,6 @@ use tauri::{
 };
 
 const REMOTE_SERVER: &str = "http://192.168.1.48:19800";
-const REMOTE_HOST: &str = "192.168.1.48";
-const REMOTE_PORT: u16 = 19800;
-
-/// Probe if the Pi server is reachable (2s timeout)
-fn server_reachable() -> bool {
-    TcpStream::connect_timeout(
-        &format!("{}:{}", REMOTE_HOST, REMOTE_PORT).parse().unwrap(),
-        Duration::from_secs(2),
-    )
-    .is_ok()
-}
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
@@ -31,19 +18,10 @@ pub fn run() {
     let builder = builder.setup(|app| {
         let handle = app.handle();
 
-        // Choose URL: remote server if reachable, else bundled fallback
-        let url = if server_reachable() {
-            println!("[Panel] Pi server reachable, loading from {}", REMOTE_SERVER);
-            WebviewUrl::External(REMOTE_SERVER.parse().unwrap())
-        } else {
-            println!("[Panel] Pi server unreachable, using bundled frontend");
-            WebviewUrl::App(Default::default())
-        };
-
         let _window = tauri::WebviewWindowBuilder::new(
             handle,
             "main",
-            url,
+            WebviewUrl::External(REMOTE_SERVER.parse().unwrap()),
         )
         .title("OpenClaw Panel")
         .inner_size(1200.0, 800.0)
