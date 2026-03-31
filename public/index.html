@@ -262,7 +262,22 @@ kbd{background:var(--bg);border:1px solid var(--border);border-radius:3px;paddin
 .toast.show{opacity:1;transform:translateY(0)}
 .toast.success{background:#22c55e}.toast.error{background:#ef4444}.toast.info{background:#6366f1}.toast.warn{background:#f59e0b}
 .file-download-btn{display:inline-flex;align-items:center;justify-content:center;width:22px;height:22px;border-radius:4px;background:rgba(99,102,241,.1);text-decoration:none;font-size:12px;vertical-align:middle;transition:all .15s;margin-left:2px}
-.file-download-btn:hover{background:rgba(99,102,241,.2);transform:scale(1.15)}</style>
+.file-download-btn:hover{background:rgba(99,102,241,.2);transform:scale(1.15)}
+.file-panel{display:none;padding:8px 16px;background:var(--surface);border-bottom:1px solid var(--border);flex-shrink:0}
+.file-panel.show{display:block}
+.file-panel-header{display:flex;align-items:center;gap:8px;cursor:pointer;user-select:none}
+.file-panel-header:hover{opacity:.8}
+.file-panel-label{font-size:11px;color:var(--dim);white-space:nowrap;display:flex;align-items:center;gap:4px}
+.file-panel-label .count{background:var(--accent);color:#fff;font-size:10px;padding:1px 6px;border-radius:8px;font-weight:600}
+.file-panel-toggle{font-size:10px;color:var(--dim)}
+.file-panel-list{display:flex;flex-wrap:wrap;gap:6px;margin-top:8px;max-height:120px;overflow-y:auto;transition:max-height .2s}
+.file-panel-list.collapsed{max-height:0;margin-top:0;overflow:hidden}
+.file-chip{display:inline-flex;align-items:center;gap:6px;padding:5px 12px;background:var(--bg);border:1px solid var(--border);border-radius:8px;font-size:12px;cursor:pointer;transition:all .15s;white-space:nowrap;text-decoration:none;color:var(--text)}
+.file-chip:hover{border-color:var(--accent);background:rgba(99,102,241,.06)}
+.file-chip .file-icon{font-size:14px}
+.file-chip .file-name{max-width:180px;overflow:hidden;text-overflow:ellipsis}
+.file-chip .file-dl{font-size:11px;color:var(--accent);opacity:0;transition:opacity .15s}
+.file-chip:hover .file-dl{opacity:1}</style>
 </head>
 <body>
 <div id="app">
@@ -306,6 +321,13 @@ kbd{background:var(--bg);border:1px solid var(--border);border-radius:3px;paddin
       <button onclick="scrollToSearchMatch(-1)" title="上一个">▲</button>
       <button onclick="scrollToSearchMatch(1)" title="下一个">▼</button>
       <button onclick="document.getElementById('chat-search').value='';applySearch();document.getElementById('search-nav').style.display='none'" title="清除搜索">✕</button>
+    </div>
+    <div class="file-panel" id="file-panel">
+      <div class="file-panel-header" onclick="toggleFilePanel()">
+        <span class="file-panel-label">📄 附件 <span class="count" id="file-panel-count">0</span></span>
+        <span class="file-panel-toggle open" id="file-panel-toggle">▼</span>
+      </div>
+      <div class="file-panel-list" id="file-panel-list"></div>
     </div>
     <div class="messages" id="messages">
       <div class="empty-chat" id="empty-chat"><div class="icon">🦞</div><p>选择一个会话开始聊天</p></div>

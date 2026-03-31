@@ -945,6 +945,8 @@ function renderMessages() {
   applyFilters();
   // Update session info in header
   updateSessionStats();
+  // Update file panel
+  updateFilePanel();
   // Sync rendered count
   _renderedMsgCount = msgs.length;
 }
@@ -1025,12 +1027,100 @@ function renderMessagesAppend() {
   scrollToBottom();
   _renderedMsgCount=msgs.length;
   updateSessionStats();
+  updateFilePanel();
 }
 
 // Debounced full render — batches rapid updates
 function renderMessagesDebounced() {
   if (_renderDebounceTimer) clearTimeout(_renderDebounceTimer);
   _renderDebounceTimer = setTimeout(function(){ _renderDebounceTimer=null; renderMessages(); scrollToBottom(); updateModelBadge(); }, 80);
+}
+
+// ===== File Panel =====
+function getFileIcon(ext) {
+  var icons = {
+    md: '📝', txt: '📄', json: '📋', log: '📜',
+    js: '📜', py: '🐍', sh: '⚙️', bash: '⚙️',
+    png: '🖼️', jpg: '🖼️', jpeg: '🖼️', gif: '🖼️', webp: '🖼️', svg: '🖼️',
+    pdf: '📕', doc: '📘', docx: '📘', xls: '📗', xlsx: '📗', ppt: '📙', pptx: '📙',
+    zip: '📦', tar: '📦', gz: '📦', rar: '📦', '7z': '📦',
+    csv: '📊', tsv: '📊', yaml: '⚙️', yml: '⚙️', toml: '⚙️', ini: '⚙️',
+    html: '🌐', css: '🎨', xml: '📰',
+    mp3: '🎵', wav: '🎵', mp4: '🎬', avi: '🎬', mov: '🎬',
+    conf: '⚙️', cfg: '⚙️', env: '⚙️',
+  };
+  return icons[ext] || '📄';
+}
+
+function extractFilesFromMessages() {
+  var inst = instances.find(function(i) { return i.id === activeInstanceId; });
+  var sess = inst ? inst.sessions.find(function(s) { return s.key === activeSessionKey }) : null;
+  if (!sess) return [];
+  var msgs = sess.messages || [];
+  var files = [];
+  var seen = {};
+
+  // File path patterns
+  var pathRegex = /(?:^|\s)((?:\/[\w.\-]+)+(?:\.\w+)|(?:[\w.\-]+\/)+[\w.\-]+\.\w+|(?:knowledge-base|scripts|lib|public|uploads|memory|workspace|tmp)\/[\w.\-\/]+\.\w+)(?=\s|$|[),;:])/g;
+
+  for (var i = 0; i < msgs.length; i++) {
+    var content = msgs[i].content || msgs[i].text || '';
+    if (typeof content !== 'string') content = JSON.stringify(content);
+    var match;
+    while ((match = pathRegex.exec(content)) !== null) {
+      var filePath = match[1].trim();
+      if (!/\.\w{1,10}$/.test(filePath)) continue;
+      if (seen[filePath]) continue;
+      seen[filePath] = true;
+      var fileName = filePath.split('/').pop();
+      var ext = fileName.split('.').pop().toLowerCase();
+      files.push({
+        path: filePath,
+        name: fileName,
+        ext: ext,
+        icon: getFileIcon(ext),
+        url: '/api/download?path=' + encodeURIComponent(filePath)
+      });
+    }
+  }
+  return files;
+}
+
+function updateFilePanel() {
+  var panel = document.getElementById('file-panel');
+  var list = document.getElementById('file-panel-list');
+  var count = document.getElementById('file-panel-count');
+  if (!panel || !list) return;
+
+  var files = extractFilesFromMessages();
+  if (files.length === 0) {
+    panel.classList.remove('show');
+    return;
+  }
+
+  count.textContent = files.length;
+  panel.classList.add('show');
+
+  var html = '';
+  for (var i = 0; i < files.length; i++) {
+    var f = files[i];
+    html += '<a class="file-chip" href="' + f.url + '" download="' + esc(f.name) + '" title="' + esc(f.path) + '">';
+    html += '<span class="file-icon">' + f.icon + '</span>';
+    html += '<span class="file-name">' + esc(f.name) + '</span>';
+    html += '<span class="file-dl">📥</span>';
+    html += '</a>';
+  }
+  list.innerHTML = html;
+  // Default collapsed
+  list.classList.add('collapsed');
+  document.getElementById('file-panel-toggle').textContent = '▶';
+}
+
+function toggleFilePanel() {
+  var list = document.getElementById('file-panel-list');
+  var toggle = document.getElementById('file-panel-toggle');
+  list.classList.toggle('collapsed');
+  toggle.textContent = list.classList.contains('collapsed') ? '▶' : '▼';
 }
 
 function renderContent(content) {

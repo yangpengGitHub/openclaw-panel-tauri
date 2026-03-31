@@ -119,6 +119,9 @@ jobs:
         with:
           targets: aarch64-linux-android,armv7-linux-androideabi,x86_64-linux-android
 
+      - name: Install cargo-ndk
+        run: cargo install cargo-ndk
+
       - name: Rust cache
         uses: swatinem/rust-cache@v2
         with:
@@ -138,12 +141,13 @@ jobs:
         with:
           name: android
           path: |
-            src-tauri/target/release/bundle/apk/*.apk
+            src-tauri/target/android/**/release/**/*.apk
           if-no-files-found: warn
 
   release:
     name: 📦 Create Release
     needs: [build-windows, build-linux, build-android]
+    if: success()
     runs-on: ubuntu-latest
     steps:
       - name: Download all artifacts
