@@ -1,0 +1,14 @@
+version: '3.8'
+
+services:
+  openclaw-panel:
+    build: .
+    container_name: openclaw-panel
+    ports:
+      - "19800:19800"
+    volumes:
+      - ./config.json:/app/config.json
+      - ./uploads:/app/uploads
+    restart: unless-stopped
+    environment:
+      - PORT=19800
