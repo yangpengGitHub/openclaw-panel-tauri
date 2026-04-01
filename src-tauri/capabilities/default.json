@@ -1,7 +1,7 @@
 {
   "identifier": "default",
   "description": "Default permissions for OpenClaw Panel",
-  "windows": ["main"],
+  "windows": ["main", "*"],
   "permissions": [
     "core:default",
     "shell:allow-open"

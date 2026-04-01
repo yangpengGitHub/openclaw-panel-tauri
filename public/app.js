@@ -126,9 +126,7 @@ let ctxTarget = null;
 let panelWs = null;
 let wsReconnectTimer = null;
 let attachments = [];
-const unreadCounts = {};  // per-instance unread counts
-const agentUnreadCounts = {}; // per-agent unread counts
-const unreadSessions = new Set(); // Set<"instanceId/sessionKey"> — sessions with unread agent replies
+const unreadSessions = new Map(); // Map<"instanceId/sessionKey", number> — unread message count per session (single source of truth)
 const filters = { thinking: true, tools: true }; // true = shown (pressed), matching native UI default
 let _renderedMsgCount = 0; // track incremental render state
 let _renderDebounceTimer = null; // debounce full re-renders
@@ -211,11 +209,46 @@ const COMMANDS = [
 let cmdIndex = -1;
 let cmdFiltered = [];
 
+// ===== Server URL Configuration (for Tauri Android) =====
+// On Android/Tauri, the app loads from bundled assets (tauri://localhost).
+// We need a configurable server URL for WebSocket and API calls.
+const _isTauri = typeof window.__TAURI__ !== 'undefined' || typeof window.__TAURI_PLUGIN_SHELL__ !== 'undefined';
+const _isTauriAndroid = _isTauri && /android/i.test(navigator.userAgent);
+
+function getServerUrl() {
+  if (_isTauriAndroid) {
+    return localStorage.getItem('oc-server-url') || '';
+  }
+  return location.origin;
+}
+
+function getWsUrl() {
+  var serverUrl = getServerUrl();
+  if (!serverUrl) return '';
+  var proto = serverUrl.startsWith('https') ? 'wss:' : 'ws:';
+  return proto + '//' + serverUrl.replace(/^https?:\/\//, '');
+}
+
+function resolveUrl(url) {
+  if (!url) return url;
+  if (url.startsWith('http://') || url.startsWith('https://')) return url;
+  if (url.startsWith('/')) {
+    var base = getServerUrl();
+    return base ? base + url : url;
+  }
+  return url;
+}
+
 // ===== Panel WS =====
 function connectPanel() {
   if (panelWs && panelWs.readyState <= 1) return;
-  const proto = location.protocol === 'https:' ? 'wss:' : 'ws:';
-  panelWs = new WebSocket(proto + '//' + location.host + '/panel-ws');
+  var wsUrl = getWsUrl();
+  if (!wsUrl) {
+    // No server URL configured - show setup dialog
+    showServerSetup();
+    return;
+  }
+  panelWs = new WebSocket(wsUrl + '/panel-ws');
   panelWs.onopen = () => console.log('[Panel] WS connected');
   panelWs.onmessage = (e) => { try { handlePanelMessage(JSON.parse(e.data)); } catch(err) { console.error(err); } };
   panelWs.onclose = () => { clearTimeout(wsReconnectTimer); wsReconnectTimer = setTimeout(connectPanel, 2000); };
@@ -359,7 +392,7 @@ function handlePanelMessage(msg) {
             }
             if (isDup) {
               if (msg.instanceId===activeInstanceId&&msg.sessionKey===activeSessionKey) { renderMessagesDebounced(); }
-              else { markUnread(msg.instanceId); if (msg.message.role!=='user') { unreadSessions.add(msg.instanceId+'/'+msg.sessionKey); renderAgents(); } }
+              else { markUnread(msg.instanceId, msg.sessionKey); }
               break;
             }
           }
@@ -369,7 +402,7 @@ function handlePanelMessage(msg) {
           else if (Array.isArray(raw)){var tp=raw.find(function(p){return p.type==='text'});sess.lastPreview=tp?tp.text.substring(0,80):'['+((raw[0]&&raw[0].type)||'...')+']';}
           sess.lastActivity = msg.message.ts||Date.now();
           if (msg.instanceId===activeInstanceId&&msg.sessionKey===activeSessionKey){renderMessagesAppend();}
-          else { markUnread(msg.instanceId); if (msg.message.role!=='user') { unreadSessions.add(msg.instanceId+'/'+msg.sessionKey); renderAgents(); } }
+          else { markUnread(msg.instanceId, msg.sessionKey); }
           renderSessions();
         }
       }
@@ -397,11 +430,10 @@ function handlePanelMessage(msg) {
         var _isOther = (msg.instanceId !== activeInstanceId || msg.sessionKey !== activeSessionKey);
         if (msg.status==='error') {
           sendNotification('❌ ' + _sessName, '任务出错', {sessionKey: msg.sessionKey, instanceId: msg.instanceId});
-          if (_isOther) { toast(_instName + ' · ' + _sessName + ' 出错了', 'error'); unreadSessions.add(msg.instanceId+'/'+msg.sessionKey); markUnread(msg.instanceId); renderAgents(); renderSessions(); }
+          if (_isOther) { toast(_instName + ' · ' + _sessName + ' 出错了', 'error'); markUnread(msg.instanceId, msg.sessionKey); }
         } else {
           sendNotification('✅ ' + _sessName, _instName + ' · 回复完成', {sessionKey: msg.sessionKey, instanceId: msg.instanceId});
-          if (_isOther) { toast(_instName + ' · ' + _sessName + ' 回复完成', 'success'); unreadSessions.add(msg.instanceId+'/'+msg.sessionKey); markUnread(msg.instanceId); renderAgents(); renderSessions(); }
-          if (_isOther) { toast(_instName + ' · ' + _sessName + ' 回复完成', 'success'); unreadSessions.add(msg.instanceId+'/'+msg.sessionKey); markUnread(msg.instanceId); renderAgents(); renderSessions(); }
+          if (_isOther) { toast(_instName + ' · ' + _sessName + ' 回复完成', 'success'); markUnread(msg.instanceId, msg.sessionKey); }
         }
       }
       // Only update DOM for the active session
@@ -522,6 +554,8 @@ function selectInstance(id) {
 function selectSession(instanceId, sessionKey) {
   activeInstanceId=instanceId; activeSessionKey=sessionKey;
   _renderedMsgCount=0; // reset incremental render state
+  // Clear all unread for this instance
+  clearUnread(instanceId);
   var inst=instances.find(function(i){return i.id===instanceId});
   var sess=inst?inst.sessions.find(function(s){return s.key===sessionKey}):null;
   // Update active agent based on session
@@ -602,7 +636,7 @@ function sendMessage() {
     attachments.forEach(function(att) {
       var fd = new FormData();
       fd.append('file', att.file);
-      fetch('/api/upload',{method:'POST',body:fd})
+      fetch(resolveUrl('/api/upload'),{method:'POST',body:fd})
         .then(function(r){return r.json()})
         .then(function(info) {
           uploaded.push({filename:info.filename,size:info.size,mimetype:info.mimetype,url:info.url,localPath:info.path});
@@ -842,25 +876,26 @@ function insertMd(before, after) {
 function renderAgents() {
   var bar = document.getElementById('agent-bar');
   var activeIds = getActiveAgentIds();
-  // Calculate per-agent unread counts
-  agentUnreadCounts._updated = true;
   var html = AGENT_DEFS.map(function(a) {
     var isActive = a.id === activeAgentId;
     var hasSessions = activeIds[a.id];
-    var unread = 0;
-    // Count unread for this agent (from non-active instances)
-    instances.forEach(function(inst) {
-      if (inst.id === activeInstanceId) return;
-      (inst.sessions || []).forEach(function(s) {
-        if ((s.agent || 'main') === a.id) unread++;
-      });
+    // Count unread messages for this agent (sum across all sessions)
+    var unreadMsgs = 0;
+    var unreadSessCount = 0;
+    unreadSessions.forEach(function(count, key) {
+      var iid = key.split('/')[0];
+      var inst = instances.find(function(i){return i.id===iid});
+      if (!inst) return;
+      var sess = inst.sessions.find(function(s){return s.key===key.split('/').slice(1).join('/')});
+      if (sess && (sess.agent||'main') === a.id) { unreadMsgs += count; unreadSessCount++; }
     });
-    var badgeHtml = unread > 0 ? '<span class="badge">' + (unread > 99 ? '99+' : unread) + '</span>' : '<span class="badge hidden"></span>';
+    var hasUnread = unreadMsgs > 0;
+    var badgeHtml = hasUnread ? '<span class="badge">' + (unreadMsgs > 99 ? '99+' : unreadMsgs) + '</span>' : '<span class="badge hidden"></span>';
     var bgOpacity = hasSessions ? '22' : '08';
     var borderColor = isActive ? a.color : 'transparent';
     var grayscale = hasSessions ? '' : 'filter:grayscale(0.7) opacity(0.5);';
     var dotClass = hasSessions ? 'online' : 'offline';
-    return '<div class="agent-icon' + (isActive ? ' active' : '') + '" data-agent="' + a.id + '" onclick="selectAgent(\'' + a.id + '\')" style="background:' + a.color + bgOpacity + ';color:' + a.color + ';border-color:' + borderColor + ';' + grayscale + '" title="' + a.name + '">' +
+    return '<div class="agent-icon' + (isActive ? ' active' : '') + (hasUnread ? ' has-unread' : '') + '" data-agent="' + a.id + '" onclick="selectAgent(\'' + a.id + '\')" style="background:' + a.color + bgOpacity + ';color:' + a.color + ';border-color:' + borderColor + ';' + grayscale + '" title="' + a.name + (hasUnread ? ' · ' + unreadSessCount + ' 会话 · ' + unreadMsgs + ' 条未读' : '') + '">' +
       a.emoji + badgeHtml +
       '<span class="status-dot ' + dotClass + '"></span></div>';
   }).join('');
@@ -882,14 +917,26 @@ function renderSessions() {
   var allSessions = inst.sessions || [];
   var sessions = allSessions.filter(function(s){return (s.agent||'main')===activeAgentId;});
 
-  if (sessions.length===0) { list.innerHTML='<div class="session-disconnected"><div>暂无 ' + getAgentDef(activeAgentId).name + ' 会话</div><button onclick="showNewSessionModal()">新建会话</button></div>'; return; }
-  list.innerHTML=sessions.map(function(s){
+  // Sort: pinned first → unread second → rest by lastActivity desc
+  var pinnedS = [], unreadS = [], normalS = [];
+  sessions.forEach(function(s) {
+    if (s.pinned) pinnedS.push(s);
+    else if (unreadSessions.has(inst.id+'/'+s.key)) unreadS.push(s);
+    else normalS.push(s);
+  });
+  var sorted = pinnedS.concat(unreadS, normalS);
+
+  if (sorted.length===0) { list.innerHTML='<div class="session-disconnected"><div>暂无 ' + getAgentDef(activeAgentId).name + ' 会话</div><button onclick="showNewSessionModal()">新建会话</button></div>'; return; }
+  list.innerHTML=sorted.map(function(s){
     var preview=s.lastPreview||'';
     var time=s.lastActivity?fmtTime(s.lastActivity):'';
-    var pinIcon=s.pinned?'📌':'';
-    return '<div class="session-item '+(s.key===activeSessionKey?'active':'')+'" onclick="selectSession(\''+inst.id+'\',\''+esc(s.key)+'\')"><span class="s-icon">'+(s.pinned?'📌':(s.key==='main'?'🏠':'💬'))+'</span><div class="s-info"><div class="s-name">'+esc(s.name)+'</div><div class="s-preview">'+esc(preview)+'</div></div><span class="s-time">'+time+'</span><button class="sess-more-btn" onclick="event.stopPropagation();openSessMenu(event,\''+inst.id+'\',\''+esc(s.key)+'\','+s.pinned+')" title="更多操作">⋯</button></div>';
+    var isUnread=unreadSessions.has(inst.id+'/'+s.key);
+    var unreadCount=isUnread?unreadSessions.get(inst.id+'/'+s.key):0;
+    var unreadHtml=isUnread?'<span class="unread-count">'+unreadCount+' 未读</span>':'';
+    return '<div class="session-item '+(s.key===activeSessionKey?'active':'')+(isUnread?' unread':'')+'" onclick="selectSession(\''+inst.id+'\',\''+esc(s.key)+'\')"><span class="s-icon">'+(s.pinned?'📌':(s.key==='main'?'🏠':'💬'))+'</span><div class="s-info"><div class="s-name">'+esc(s.name)+unreadHtml+'</div><div class="s-preview">'+esc(preview)+'</div></div><span class="s-time">'+time+'</span><button class="sess-more-btn" onclick="event.stopPropagation();openSessMenu(event,\''+inst.id+'\',\''+esc(s.key)+'\','+s.pinned+')" title="更多操作">⋯</button></div>';
   }).join('')+'<button class="new-session-btn" onclick="showNewSessionModal()">+ 新建会话</button>';
   filterSessions();
+  updateMarkAllReadBtn();
 }
 
 function renderMessages() {
@@ -1046,7 +1093,7 @@ function renderMessagesDebounced() {
 // Tauri WebView doesn't support fetch+blob downloads reliably.
 // Use Tauri shell.open to launch the system browser for native downloads.
 function downloadFile(url, filename) {
-  if (url.startsWith('/')) url = location.origin + url;
+  url = resolveUrl(url);
   console.log('[Download]', url);
 
   var btn = event && event.currentTarget;
@@ -1474,6 +1521,26 @@ function removeReaction(badgeEl, emoji) {
   renderReactions(msgEl, r);
 }
 
+// ===== Copy Helper (works on HTTP) =====
+function copyToClipboard(text, successEl, origText) {
+  // Try modern API first (HTTPS)
+  if (navigator.clipboard && window.isSecureContext) {
+    navigator.clipboard.writeText(text).then(function(){
+      if (successEl) { successEl.textContent='✅'; setTimeout(function(){successEl.textContent=origText||'📋'},1200); }
+    });
+    return;
+  }
+  // Fallback: execCommand (works on HTTP)
+  var ta = document.createElement('textarea');
+  ta.value = text;
+  ta.style.cssText = 'position:fixed;left:-9999px;top:-9999px';
+  document.body.appendChild(ta);
+  ta.select();
+  try { document.execCommand('copy'); } catch(e) {}
+  document.body.removeChild(ta);
+  if (successEl) { successEl.textContent='✅'; setTimeout(function(){successEl.textContent=origText||'📋'},1200); }
+}
+
 // ===== Code Block Copy =====
 function addCodeCopyButtons() {
   document.querySelectorAll('.msg pre').forEach(function(pre) {
@@ -1484,10 +1551,7 @@ function addCodeCopyButtons() {
     btn.title = '复制代码';
     btn.onclick = function() {
       var code = pre.querySelector('code');
-      navigator.clipboard.writeText(code ? code.textContent : pre.textContent).then(function(){
-        btn.textContent = '✅';
-        setTimeout(function(){btn.textContent='📋'}, 1200);
-      });
+      copyToClipboard(code ? code.textContent : pre.textContent, btn, '📋');
     };
     pre.style.position = 'relative';
     pre.appendChild(btn);
@@ -1527,9 +1591,7 @@ function copyMsg(btn) {
     texts.push(clone.textContent);
   }
   var fullText = texts.join('\n\n').trim();
-  if (fullText) navigator.clipboard.writeText(fullText).then(function(){
-    btn.textContent='✅'; setTimeout(function(){btn.textContent='📋'},1200);
-  });
+  if (fullText) copyToClipboard(fullText, btn, '📋');
 }
 
 // ===== Retry Message =====
@@ -1580,10 +1642,9 @@ function copyAllMessages() {
     } else if (m.text) text = m.text;
     if (text.trim()) lines.push(role + ':\n' + text.trim());
   });
-  navigator.clipboard.writeText(lines.join('\n\n---\n\n')).then(function(){
-    var btn = document.getElementById('copy-all-btn');
-    if (btn) { btn.textContent = '✅'; setTimeout(function(){btn.textContent='📋'},1200); }
-  });
+  var allText = lines.join('\n\n---\n\n');
+  var btn = document.getElementById('copy-all-btn');
+  copyToClipboard(allText, btn, '📋');
 }
 
 function editAndResend(btn) {
@@ -1724,7 +1785,7 @@ function switchModel() {
   // Show loading state
   var el = document.getElementById('ch-model');
   el.textContent = '⏳ 加载中...';
-  fetch('/api/models/' + encodeURIComponent(activeInstanceId))
+  fetch(resolveUrl('/api/models/' + encodeURIComponent(activeInstanceId)))
     .then(function(r){ return r.json(); })
     .then(function(data){
       var models = data.models || [];
@@ -1897,8 +1958,54 @@ function abortRun() { if (activeInstanceId&&activeSessionKey) { send('abort',{in
 
 function filterSessions() { var q=(document.getElementById('search-input').value||'').toLowerCase(); document.querySelectorAll('.session-item').forEach(function(el){var n=el.querySelector('.s-name');var p=el.querySelector('.s-preview');el.style.display=(!q||(n&&n.textContent.toLowerCase().indexOf(q)>=0)||(p&&p.textContent.toLowerCase().indexOf(q)>=0))?'':'none';}); }
 
-function markUnread(id) { if (id===activeInstanceId) return; unreadCounts[id]=(unreadCounts[id]||0)+1; renderInstances(); }
-function clearUnread(id) { unreadCounts[id]=0; renderInstances(); }
+function markUnread(instanceId, sessionKey) { if (instanceId===activeInstanceId && sessionKey===activeSessionKey) return; var key=instanceId+'/'+sessionKey; unreadSessions.set(key,(unreadSessions.get(key)||0)+1); renderAgents(); renderSessions(); }
+function clearUnread(instanceId, sessionKey) { if (sessionKey) { unreadSessions.delete(instanceId+'/'+sessionKey); } else { unreadSessions.forEach(function(v,k){ if(k.startsWith(instanceId+'/')) unreadSessions.delete(k); }); } renderAgents(); renderSessions(); }
+function clearAllUnread() {
+  unreadSessions.clear();
+  renderAgents(); renderSessions();
+}
+function updateMarkAllReadBtn() {
+  var btn = document.getElementById('mark-all-read-btn');
+  if (!btn) return;
+  var hasUnread = unreadSessions.size > 0;
+  btn.style.display = hasUnread ? '' : 'none';
+  btn.textContent = '✓' + (hasUnread ? ' (' + unreadSessions.size + ')' : '');
+  // Update unread summary in chat header
+  var el = document.getElementById('ch-unread-summary');
+  if (el) {
+    if (hasUnread) {
+      var totalMsgs = 0;
+      unreadSessions.forEach(function(c){ totalMsgs += c; });
+      el.textContent = '🔔 ' + unreadSessions.size + ' 会话 · ' + totalMsgs + ' 条未读';
+      el.style.display = '';
+    } else {
+      el.style.display = 'none';
+    }
+  }
+}
+
+function focusNextUnread() {
+  // Jump to the next unread session (prioritize current agent across ALL instances)
+  if (unreadSessions.size === 0) return;
+  var candidates = [];
+  unreadSessions.forEach(function(count, key) {
+    var iid = key.split('/')[0];
+    var sk = key.substring(iid.length+1);
+    var inst = instances.find(function(i){return i.id===iid});
+    if (!inst) return;
+    var sess = inst.sessions.find(function(s){return s.key===sk});
+    var priority = 0;
+    if (iid === activeInstanceId && sess && (sess.agent||'main') === activeAgentId) priority = 2; // same instance + agent
+    else if (sess && (sess.agent||'main') === activeAgentId) priority = 1; // same agent different instance
+    candidates.push({ key, iid, sk, priority, sess, inst });
+  });
+  candidates.sort(function(a,b){ return b.priority - a.priority; });
+  if (candidates.length > 0) {
+    var best = candidates[0];
+    if (best.sess) selectAgent(best.sess.agent||'main');
+    selectSession(best.iid, best.sk);
+  }
+}
 
 function createSession() {
   if (!activeInstanceId) return;
@@ -2112,6 +2219,32 @@ function submitAgentForm() {
   }
   _editingAgentId = null;
   renderAgentManagerModal();
+}
+
+// ===== Server Setup (Android/Tauri) =====
+function showServerSetup() {
+  var modal = document.getElementById('server-setup-modal');
+  if (modal) {
+    var input = document.getElementById('setup-server-url');
+    if (input) input.value = getServerUrl() || 'http://192.168.1.48:19800';
+    modal.classList.add('show');
+  }
+}
+
+function saveServerSetup() {
+  var input = document.getElementById('setup-server-url');
+  var url = (input && input.value.trim()) || '';
+  if (!url) return alert('请输入服务器地址');
+  // Normalize: remove trailing slash
+  url = url.replace(/\/+$/, '');
+  // Ensure protocol
+  if (!/^https?:\/\//.test(url)) url = 'http://' + url;
+  localStorage.setItem('oc-server-url', url);
+  var modal = document.getElementById('server-setup-modal');
+  if (modal) modal.classList.remove('show');
+  // Reconnect with new URL
+  if (panelWs) { panelWs.close(); panelWs = null; }
+  connectPanel();
 }
 
 // ===== Init =====

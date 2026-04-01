@@ -13,12 +13,12 @@
     "withGlobalTauri": true,
     "windows": [],
     "security": {
-      "csp": "default-src 'self' ws: http: https:; script-src 'self' 'unsafe-inline' 'unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: http: https:; connect-src 'self' ws: wss: http: https:; font-src 'self' data: http: https:;"
+      "csp": "default-src 'self' ws: http: https: data: blob:; script-src 'self' 'unsafe-inline' 'unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: http: https:; connect-src 'self' ws: wss: http: https:; font-src 'self' data: http: https:;"
     }
   },
   "bundle": {
     "active": true,
-    "targets": ["nsis", "msi", "deb", "appimage"],
+    "targets": ["nsis", "msi", "deb", "appimage", "apk"],
     "icon": [
       "icons/32x32.png",
       "icons/128x128.png",
@@ -38,6 +38,10 @@
           "libayatana-appindicator3-1"
         ]
       }
+    },
+    "android": {
+      "minSdkVersion": 24,
+      "targetSdkVersion": 34
     }
   },
   "plugins": {

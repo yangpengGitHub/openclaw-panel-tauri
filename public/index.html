@@ -154,6 +154,15 @@ body{font-family:'Noto Sans SC','Droid Sans Fallback',-apple-system,BlinkMacSyst
 .am-actions{display:flex;gap:2px}
 .am-btn{width:28px;height:28px;border:none;background:transparent;border-radius:6px;cursor:pointer;font-size:13px;display:flex;align-items:center;justify-content:center}
 .am-btn:hover{background:var(--hover)}
+.session-item.unread{background:var(--hover)}
+.session-item.unread .s-name{font-weight:700;color:var(--text)}
+.session-item.unread .s-preview{color:var(--text);font-weight:500}
+.unread-dot{display:inline-block;width:8px;height:8px;border-radius:50%;background:var(--accent);margin-left:6px;vertical-align:middle;animation:unread-pulse 2s infinite}
+@keyframes unread-pulse{0%,100%{opacity:1}50%{opacity:.4}}
+.agent-icon.has-unread{animation:agent-glow 2s infinite}
+@keyframes agent-glow{0%,100%{box-shadow:0 0 0 0 transparent}50%{box-shadow:0 0 10px 2px currentColor}}
+.unread-count{display:inline-block;font-size:10px;font-weight:700;color:var(--accent);margin-left:4px;background:var(--accent);background:color-mix(in srgb, var(--accent) 15%, transparent);padding:1px 5px;border-radius:8px}
+.ch-unread-summary{font-size:11px;color:var(--accent);font-weight:600}
 #agent-manager-list{max-height:240px;overflow-y:auto;margin-bottom:8px}
 .approval-overlay{position:fixed;inset:0;background:rgba(0,0,0,.5);display:none;align-items:center;justify-content:center;z-index:3000;backdrop-filter:blur(6px)}
 .approval-overlay.show{display:flex;animation:fadeIn .15s ease}
@@ -291,6 +300,7 @@ kbd{background:var(--bg);border:1px solid var(--border);border-radius:3px;paddin
         <p class="instance-desc" id="gateway-desc"></p>
       </div>
       <div class="actions">
+        <button onclick="clearAllUnread()" title="全部已读" id="mark-all-read-btn" style="display:none">✓</button>
         <button onclick="refreshSessions()" title="刷新 (Ctrl+R)">⟳</button>
       </div>
     </div>
@@ -312,6 +322,7 @@ kbd{background:var(--bg);border:1px solid var(--border);border-radius:3px;paddin
       <button class="filter-btn" id="filter-tools-btn" onclick="toggleFilter('tools')" title="显示/隐藏工具调用">🔧 工具</button>
       <button class="filter-btn" id="copy-all-btn" onclick="copyAllMessages()" title="复制全部消息">📋</button>
       <span class="ch-stats" id="ch-stats" onclick="showSessionInfo()" style="font-size:11px;color:var(--dim);margin-left:8px;white-space:nowrap" title="点击查看详情"></span>
+      <span class="ch-unread-summary" id="ch-unread-summary" style="display:none;cursor:pointer" onclick="focusNextUnread()" title="点击跳转到下一个未读会话"></span>
       <span class="ch-status"><span class="ch-dot"></span>在线</span>
       <span class="task-status" id="task-status" onclick="this.classList.toggle('expanded')"><span id="task-status-icon">💭</span><span id="task-status-text"></span></span>
       <button class="abort-btn" id="abort-btn" onclick="abortRun()">⏹ 中止</button>
@@ -441,6 +452,20 @@ kbd{background:var(--bg);border:1px solid var(--border);border-radius:3px;paddin
 </div>
 
 <div id="toast-container"></div>
+
+<!-- Server Setup Modal (Android/Tauri) -->
+<div class="modal-bg" id="server-setup-modal">
+  <div class="modal">
+    <h3>🦞 连接 OpenClaw Panel</h3>
+    <p style="font-size:13px;color:var(--dim);margin-bottom:12px">输入 Panel 服务器地址</p>
+    <label>服务器地址</label>
+    <input id="setup-server-url" placeholder="http://192.168.1.48:19800" value="http://192.168.1.48:19800">
+    <div class="modal-actions">
+      <button class="btn btn-primary" onclick="saveServerSetup()">连接</button>
+    </div>
+  </div>
+</div>
+
 <script src="/app.js"></script>
 </body>
 </html>

@@ -14,6 +14,7 @@ pub fn run() {
     let builder = tauri::Builder::default()
         .plugin(tauri_plugin_shell::init());
 
+    // --- Desktop: create window pointing to remote server + system tray ---
     #[cfg(not(target_os = "android"))]
     let builder = builder.setup(|app| {
         let handle = app.handle();
@@ -31,7 +32,7 @@ pub fn run() {
         .center()
         .build()?;
 
-        // --- System Tray (Desktop only) ---
+        // --- System Tray ---
         let show = MenuItemBuilder::with_id("show", "Show Panel").build(handle)?;
         let separator = MenuItemBuilder::with_id("sep", "---").build(handle)?;
         let quit = MenuItemBuilder::with_id("quit", "Quit").build(handle)?;
@@ -63,10 +64,10 @@ pub fn run() {
         Ok(())
     });
 
+    // --- Desktop: minimize to tray on close ---
     #[cfg(not(target_os = "android"))]
     let builder = builder.on_window_event(|window, event| {
         if let tauri::WindowEvent::CloseRequested { api, .. } = event {
-            // Minimize to tray instead of closing
             let _ = window.hide();
             api.prevent_close();
         }

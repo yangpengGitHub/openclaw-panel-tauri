@@ -1,0 +1,107 @@
+name: Android Build
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+env:
+  CARGO_INCREMENTAL: 0
+  RUST_BACKTRACE: short
+
+jobs:
+  build-android:
+    name: 🤖 Build Android APK
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Setup Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '17'
+
+      - name: Setup Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Accept Android SDK licenses
+        run: yes | sdkmanager --licenses > /dev/null 2>&1 || true
+
+      - name: Install Android SDK components
+        run: |
+          sdkmanager \
+            "platforms;android-34" \
+            "build-tools;34.0.0" \
+            "ndk;27.2.12479018" \
+            "cmake;3.22.1"
+
+      - name: Set ANDROID_HOME and ANDROID_NDK_HOME
+        run: |
+          echo "ANDROID_HOME=$ANDROID_HOME" >> $GITHUB_ENV
+          echo "ANDROID_NDK_HOME=$ANDROID_NDK_HOME" >> $GITHUB_ENV
+          echo "NDK_HOME=$ANDROID_NDK_HOME" >> $GITHUB_ENV
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-linux-android,armv7-linux-androideabi,x86_64-linux-android
+
+      - name: Install cargo-ndk
+        run: cargo install cargo-ndk
+
+      - name: Rust cache
+        uses: swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+
+      - name: Install frontend deps
+        run: npm install
+
+      - name: Init Tauri Android
+        run: npx tauri android init
+
+      - name: Build Tauri (Android APK)
+        run: npx tauri android build --apk
+
+      - name: Find APK files
+        id: find-apk
+        run: |
+          APK_PATH=$(find src-tauri/target/android src-tauri/gen/android -name "*.apk" -type f 2>/dev/null | head -1)
+          if [ -n "$APK_PATH" ]; then
+            echo "apk_path=$APK_PATH" >> $GITHUB_OUTPUT
+            echo "Found APK: $APK_PATH"
+          else
+            echo "::error::No APK file found"
+            exit 1
+          fi
+
+      - name: Upload APK artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: openclaw-panel-android
+          path: |
+            src-tauri/target/android/**/*.apk
+            src-tauri/gen/android/**/build/outputs/apk/**/*.apk
+          if-no-files-found: error
+
+      - name: Create Release
+        if: github.event_name == 'push'
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: android-${{ github.sha }}
+          name: OpenClaw Panel Android (dev)
+          draft: false
+          prerelease: true
+          generate_release_notes: true
+          files: |
+            src-tauri/target/android/**/*.apk
+            src-tauri/gen/android/**/build/outputs/apk/**/*.apk

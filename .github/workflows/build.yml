@@ -114,6 +114,23 @@ jobs:
       - name: Setup Android SDK
         uses: android-actions/setup-android@v3
 
+      - name: Accept Android SDK licenses
+        run: yes | sdkmanager --licenses > /dev/null 2>&1 || true
+
+      - name: Install Android SDK components
+        run: |
+          sdkmanager \
+            "platforms;android-34" \
+            "build-tools;34.0.0" \
+            "ndk;27.2.12479018" \
+            "cmake;3.22.1"
+
+      - name: Set ANDROID_HOME and ANDROID_NDK_HOME
+        run: |
+          echo "ANDROID_HOME=$ANDROID_HOME" >> $GITHUB_ENV
+          echo "ANDROID_NDK_HOME=$ANDROID_NDK_HOME" >> $GITHUB_ENV
+          echo "NDK_HOME=$ANDROID_NDK_HOME" >> $GITHUB_ENV
+
       - name: Install Rust
         uses: dtolnay/rust-toolchain@stable
         with:
@@ -130,18 +147,30 @@ jobs:
       - name: Install frontend deps
         run: npm install
 
+      - name: Generate Android icons
+        run: |
+          mkdir -p src-tauri/gen/android/app/src/main/res/drawable
+          cp src-tauri/icons/128x128.png src-tauri/gen/android/app/src/main/res/drawable/ic_launcher.png 2>/dev/null || true
+
       - name: Init Tauri Android
         run: npx tauri android init
 
       - name: Build Tauri (Android)
         run: npx tauri android build --apk
 
+      - name: Find APK files
+        run: |
+          echo "=== APK files ==="
+          find src-tauri/target/android -name "*.apk" -type f 2>/dev/null || echo "No APKs in target/android"
+          find src-tauri/gen/android -name "*.apk" -type f 2>/dev/null || echo "No APKs in gen/android"
+
       - name: Upload artifacts
         uses: actions/upload-artifact@v4
         with:
           name: android
           path: |
-            src-tauri/target/android/**/release/**/*.apk
+            src-tauri/target/android/**/*.apk
+            src-tauri/gen/android/**/build/outputs/apk/**/*.apk
           if-no-files-found: warn
 
   release:
